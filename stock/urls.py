@@ -15,7 +15,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-
+from api.engine import company
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('companies/', company.fetch_companies),
 ]

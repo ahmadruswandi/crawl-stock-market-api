@@ -1,32 +1,36 @@
 import json
+from multiprocessing import Pool
+from multiprocessing import cpu_count
+from pprint import pprint
 import traceback
-from datetime import datetime
-import grequests
-import requests
-from bs4 import BeautifulSoup as BSoup
+from io import BytesIO
+
+from bs4 import BeautifulSoup as BSoup, Tag, NavigableString
+import pycurl
+
+# exec(open('market-stock.py').read())
 
 class MarketStockEngine:
 
+
     def fetch_company_list(self):
+        buffer = BytesIO()
+        # url = 'http://localhost/static/vietnam-stock.html'
         url = 'http://stock.vietnammarkets.com/vietnam-stock-market.php'
-        # url = 'http://stock.vietnammarkets.com/food-processing/ABT/'
-        rs = (grequests.get(u) for u in [url])
-        result = grequests.map(rs)
-        page_content = None
-        if len(result) > 0:
-            if result[0] is None:
-                return "PAGE_NOT_REACHED"
-            if result[0].status_code == 200:
-                page_content = result[0].content
-            else:
-                return "SERVER ERROR " + str(result[0].status_code)
-
-        if page_content is None or page_content == '':
-            return "PAGE_EMPTY"
-
-        bs = BSoup(page_content, 'html.parser')
+        c = pycurl.Curl()
+        c.setopt(pycurl.URL, url)
+        c.setopt(c.WRITEDATA, buffer)
+        c.setopt(pycurl.HTTPHEADER, ['Accept: application/json', 'X-Requested-By:MyClient'])
+        c.setopt(pycurl.VERBOSE, 0)
+        c.perform()
+        c.close()
+        data = buffer.getvalue()
+        data = data.decode("utf-8")
+        bs = BSoup(data, 'html.parser')
+        # bs = BSoup(data, 'xml.parser')
+        cnt = 0
         datalist = []
-        url2data = {}
+        profilelist = []
         for tag in bs.find_all("p", "r1"):
             for tr in tag.find_all("tr"):
                 tds = tr.find_all("td")
@@ -45,67 +49,54 @@ class MarketStockEngine:
                 if ticker_symbol == '-':
                     continue
 
-                company_name = self.extract_td_content(tds[1])
+                company_name = self.extract_content(tds[1])
+                print("Processing ...", ticker_symbol, company_name)
                 data = {
-                    'ticker symbol': ticker_symbol, 'url': url,
+                    'ticker symbol': ticker_symbol,
+                    'url': url,
                     'company name': company_name,
-                    'business': self.extract_td_content(tds[2]),
-                    'Listing bourse': self.extract_td_content(tds[3])
+                    'business': self.extract_content(tds[2]),
+                    'Listing bourse': self.extract_content(tds[3])
                 }
-                url2data[url] = data
+
+                profile = self.fetch_company_profile(data)
+                if profile is None:
+                    continue
+
+                profilelist.append(profile)
                 datalist.append(data)
+                cnt += 1
+                # if cnt > 1:
+                #     break
 
-        profiles = self.fetch_company_profiles(url2data)
-        # profiles = self.fetch_company_profiles_slow(url2data)
 
-        # with open('../result/company_index.json', 'w', encoding='utf-8') as f:
+        # with open('company_index.json', 'w', encoding='utf-8') as f:
         #     json.dump(datalist, f, ensure_ascii=False)
         #
-        # with open('../result/company_profiles.json', 'w', encoding='utf-8') as f:
-        #     json.dump(profiles, f, ensure_ascii=False)
+        # with open('company_profiles.json', 'w', encoding='utf-8') as f:
+        #     json.dump(profilelist, f, ensure_ascii=False)
 
-        return "OK"
+    def fetch_company_profile(self, company_data):
 
-    def fetch_company_profiles(self, url2data):
-        profiles = []
         try:
-            rs = (grequests.get(u) for u in url2data.keys())
-            results = grequests.map(rs)
-            for res in results:
+            buffer = BytesIO()
+            c = pycurl.Curl()
+            c.setopt(pycurl.URL, company_data['url'])
+            c.setopt(c.WRITEDATA, buffer)
+            c.setopt(pycurl.HTTPHEADER, ['Accept: application/json', 'X-Requested-By:MyClient'])
+            c.setopt(pycurl.VERBOSE, 0)
+            c.perform()
+            c.close()
+            data = buffer.getvalue()
+            data = data.decode("utf-8")
+            bs = BSoup(data, 'html.parser')
 
-                if res.status_code == 200:
-                    company_data = url2data[res.url]
-                    bs = BSoup(res.content, 'html.parser')
-                    main_tbl = bs.find_all("table")[0]
-                    profile = self.fetch_company_profile(main_tbl, company_data)
-                    profiles.append(profile)
+            main_tbl = bs.find_all("table")[0]
         except:
-            traceback.print_exc()
-            pass
-
-        return profiles
-
-    def fetch_company_profiles_slow(self, url2data):
-        profiles = []
-        try:
-            for url in url2data.keys():
-                res = requests.get(url)
-                if res.status_code == 200:
-                    company_data = url2data[res.url]
-                    bs = BSoup(res.content, 'html.parser')
-                    main_tbl = bs.find_all("table")[0]
-                    profile = self.fetch_company_profile(main_tbl, company_data)
-                    profiles.append(profile)
-
-        except:
-            traceback.print_exc()
-            pass
-
-        return profiles
-
-    def fetch_company_profile(self, main_tbl, company_data):
+            return None
 
         financial_data = self.get_financial_data(main_tbl)
+
         company_profile_td = main_tbl.find_all("td")[0]
 
         seglist = self.get_segment_list(main_tbl)
@@ -137,6 +128,7 @@ class MarketStockEngine:
             "revenue": '-' if financial_data is None else financial_data['Market Cap'],
             "ticker symbol": company_data['ticker symbol'],
             "financial summary": financial_data,
+            # "business registration": {"established licence": "", "business license": ""},
             "business registration": business_registration,
             # "auditing company": {"company_name": "", "address": "", "phone_number": "", "other...": "..."}
             "auditing company": auditing_company
@@ -175,6 +167,7 @@ class MarketStockEngine:
 
         return seglist
 
+
     def get_financial_data(self, main_tbl):
         financial_tbl = main_tbl.find_all("table")[0]
         financial_data = {}
@@ -204,20 +197,35 @@ class MarketStockEngine:
 
         return segment_arr[1:]
 
-    def extract_td_content(self, td_obj):
+    def extract_content(self, td_obj):
         if td_obj:
             return str(td_obj.contents[0])
         else:
             return '-'
 
-start = datetime.now()
-print("Started at", start)
-mse = MarketStockEngine()
-msg = mse.fetch_company_list()
-print(msg)
-end = datetime.now()
-print("Ended at", end)
-print("Duration", end-start)
 
+from datetime import datetime
+start = datetime.now()
+mse = MarketStockEngine()
+mse.fetch_company_list()
+
+# pool = Pool(cpu_count() * 2)
+# with pool as p:
+#     records = p.map(parse, cars_links)
+
+end = datetime.now()
+print("Duration", end-start)
+# with open('company_profiles.json') as f:
+#     data = json.load(f)
+
+
+urls = [
+# 'http://stock.vietnammarkets.com/general-industries/BBS/'
+]
+
+# url = 'http://stock.vietnammarkets.com/others/ANV/'
+# url = 'http://stock.vietnammarkets.com/electric-and-electronics-equipment/VBH/'
+# url = 'http://stock.vietnammarkets.com/paper-and-wood-products/ILC/'
+# url = 'http://stock.vietnammarkets.com/communication/EBS/'
 
 # Duration 0:27:17.354757
