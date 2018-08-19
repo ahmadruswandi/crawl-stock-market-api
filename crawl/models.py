@@ -17,3 +17,5 @@ class CompanyInfo(models.Model):
 
     class Meta:
         unique_together = ('ticker_symbol', 'param_name',)
+
+

@@ -9,16 +9,21 @@ class SaveMarketStock:
 
     def read_json_file(self):
 
+        # prepare listing bourse
+        bourse_map = {}
+        with open('../result/company_index.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            for idx, d in enumerate(data):
+                try:
+                    bourse_map[d['ticker symbol']] = d['Listing bourse']
+                except:
+                    bourse_map[d['ticker symbol']] = '-'
+
         with open('../result/company_profiles.json', 'r', encoding='utf-8') as f:
             data = json.load(f)
             for idx, d in enumerate(data):
-                d['listing_bourse'] = '?'
+                d['listing_bourse'] = bourse_map[d['ticker symbol']]
                 self.save(d, idx+1)
-                break
-
-        # with open('../result/company_index.json', 'r', encoding='utf-8') as f:
-        #     data = json.load(f)
-        #     print(len(data))
 
 
     def save(self, data, idx):
@@ -38,9 +43,8 @@ class SaveMarketStock:
         revenue = re.sub(r'\D', "", data['revenue'])
         company.revenue = revenue
         company.save()
-        # print(ticker_symbol, " saved.", company.business)
         for key in data.keys():
-            print(key, data[key])
+            # print(key, data[key])
             self.save_company_info(ticker_symbol, key, data[key])
 
     def save_company_info(self, ticker_symbol, param_name, param_value):

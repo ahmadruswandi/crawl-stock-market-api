@@ -27,11 +27,12 @@ class MarketStockEngine:
         bs = BSoup(page_content, 'html.parser')
         datalist = []
         url2data = {}
+
         for tag in bs.find_all("p", "r1"):
             for tr in tag.find_all("tr"):
                 tds = tr.find_all("td")
                 if len(tds) != 4:
-                    continue
+                    continue # make sure we have 4 columns
 
                 ticker_td = tds[0]
                 ticker_a = ticker_td.select("a")
@@ -39,15 +40,12 @@ class MarketStockEngine:
                     ticker_symbol = ticker_a[0].contents[0]
                     url = ticker_a[0].get("href")
                 else:
-                    ticker_symbol = '-'
-                    url = '-'
-
-                if ticker_symbol == '-':
                     continue
 
                 company_name = self.extract_td_content(tds[1])
                 data = {
-                    'ticker symbol': ticker_symbol, 'url': url,
+                    'ticker symbol': ticker_symbol,
+                    'url': url,
                     'company name': company_name,
                     'business': self.extract_td_content(tds[2]),
                     'Listing bourse': self.extract_td_content(tds[3])
@@ -55,14 +53,14 @@ class MarketStockEngine:
                 url2data[url] = data
                 datalist.append(data)
 
+        with open('../result/company_index.json', 'w', encoding='utf-8') as f:
+            json.dump(datalist, f, ensure_ascii=False)
+
         profiles = self.fetch_company_profiles(url2data)
         # profiles = self.fetch_company_profiles_slow(url2data)
 
-        # with open('../result/company_index.json', 'w', encoding='utf-8') as f:
-        #     json.dump(datalist, f, ensure_ascii=False)
-        #
-        # with open('../result/company_profiles.json', 'w', encoding='utf-8') as f:
-        #     json.dump(profiles, f, ensure_ascii=False)
+        with open('../result/company_profiles.json', 'w', encoding='utf-8') as f:
+            json.dump(profiles, f, ensure_ascii=False)
 
         return "OK"
 
@@ -72,7 +70,6 @@ class MarketStockEngine:
             rs = (grequests.get(u) for u in url2data.keys())
             results = grequests.map(rs)
             for res in results:
-
                 if res.status_code == 200:
                     company_data = url2data[res.url]
                     bs = BSoup(res.content, 'html.parser')
@@ -80,7 +77,6 @@ class MarketStockEngine:
                     profile = self.fetch_company_profile(main_tbl, company_data)
                     profiles.append(profile)
         except:
-            traceback.print_exc()
             pass
 
         return profiles
@@ -96,9 +92,7 @@ class MarketStockEngine:
                     main_tbl = bs.find_all("table")[0]
                     profile = self.fetch_company_profile(main_tbl, company_data)
                     profiles.append(profile)
-
         except:
-            traceback.print_exc()
             pass
 
         return profiles
@@ -210,14 +204,18 @@ class MarketStockEngine:
         else:
             return '-'
 
-start = datetime.now()
-print("Started at", start)
-mse = MarketStockEngine()
-msg = mse.fetch_company_list()
-print(msg)
-end = datetime.now()
-print("Ended at", end)
-print("Duration", end-start)
+
+if __name__ == 'builtins':
+    start = datetime.now()
+    print("Started at", start)
+    # mse = MarketStockEngine()
+    # msg = mse.fetch_company_list()
+    # print(msg)
+    end = datetime.now()
+    print("Ended at", end)
+    print("Duration", end-start)
 
 
-# Duration 0:27:17.354757
+    # Duration 0:27:17.354757
+
+    
